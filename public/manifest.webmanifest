@@ -1,0 +1,13 @@
+{
+  "name": "君宇集團員工工作入口",
+  "short_name": "君宇工作入口",
+  "description": "個人任務、會議與公司服務入口",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f7f8",
+  "theme_color": "#0b5363",
+  "icons": [
+    {"src":"/icon.svg","sizes":"192x192","type":"image/svg+xml"},
+    {"src":"/icon.svg","sizes":"512x512","type":"image/svg+xml"}
+  ]
+}
