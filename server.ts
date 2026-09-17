@@ -7,7 +7,7 @@ import {getAuth} from 'firebase-admin/auth';
 import {getFirestore} from 'firebase-admin/firestore';
 import {resolveEmployee,type Employee} from './employee-identity';
 import {createTask,listTasks,TaskError,updateTask} from './task-service';
-import {checkInMood,listDashboard,sendChat} from './dashboard-service';
+import {checkInMood,listChatPeople,listDashboard,listDirectMessages,sendChat,sendDirectMessage} from './dashboard-service';
 
 dotenv.config();
 const app=express();app.use(express.json({limit:'64kb'}));
@@ -38,6 +38,9 @@ app.use('/api/dashboard',async(req,res,next)=>{res.set('Cache-Control','no-store
 app.get('/api/dashboard',async(_req,res)=>{try{res.json(await listDashboard(db!));}catch{res.status(503).json({error:'讀取團隊工作台失敗。'});}});
 app.post('/api/dashboard/mood',async(req,res)=>{try{await checkInMood(db!,res.locals.employee,req.body?.mood);res.status(201).json(await listDashboard(db!));}catch(error){res.status(400).json({error:error instanceof Error?error.message:'心情報到失敗。'});}});
 app.post('/api/dashboard/chat',async(req,res)=>{try{await sendChat(db!,res.locals.employee,req.body?.text);res.status(201).json(await listDashboard(db!));}catch(error){res.status(400).json({error:error instanceof Error?error.message:'訊息傳送失敗。'});}});
+app.get('/api/dashboard/people',async(_req,res)=>{try{res.json({people:await listChatPeople(db!,res.locals.employee)});}catch{res.status(503).json({error:'讀取公司人員失敗。'});}});
+app.get('/api/dashboard/direct/:email',async(req,res)=>{try{res.json({messages:await listDirectMessages(db!,res.locals.employee,req.params.email)});}catch(error){res.status(400).json({error:error instanceof Error?error.message:'讀取私訊失敗。'});}});
+app.post('/api/dashboard/direct/:email',async(req,res)=>{try{res.status(201).json({message:await sendDirectMessage(db!,res.locals.employee,req.params.email,req.body?.text)});}catch(error){res.status(400).json({error:error instanceof Error?error.message:'私訊傳送失敗。'});}});
 
 async function start(){if(process.env.NODE_ENV!=='production'){const vite=await createViteServer({server:{middlewareMode:true},appType:'spa'});app.use(vite.middlewares);}else{const dist=path.join(process.cwd(),'dist');app.use(express.static(dist));app.get('*',(_req,res)=>res.sendFile(path.join(dist,'index.html')));}app.listen(Number(process.env.PORT)||3000,'0.0.0.0');}
 start();
