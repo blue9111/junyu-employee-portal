@@ -31,6 +31,7 @@ export default function App(){
   const [tasks,setTasks]=useState<Task[]>([]);
   const [dashboard,setDashboard]=useState<DashboardData>(blankDashboard);
   const [weather,setWeather]=useState<WeatherData|null>(null);
+  const [weatherLocation,setWeatherLocation]=useState('正在取得位置…');
   const [checking,setChecking]=useState(true);
   const [message,setMessage]=useState('正在連線員工工作入口…');
   const [query,setQuery]=useState('');
@@ -57,7 +58,27 @@ export default function App(){
   useEffect(()=>{if(!auth)return;return onAuthStateChanged(auth,current=>{setUser(current);setEmployee(null);setTasks([]);setChecking(!!current);setMessage(current?'正在載入您的工作空間…':'請使用已建檔且啟用的 Google 帳號登入。');});},[auth]);
   useEffect(()=>{if(!user)return;void(async()=>{try{const response=await fetch('/api/me',{headers:{Authorization:`Bearer ${await user.getIdToken()}`}});const data=await readJson(response);if(!response.ok)throw Error(data.error);setEmployee(data.employee);setMessage('個人工作空間已同步');}catch(error){setMessage(error instanceof Error?error.message:'登入驗證失敗。');}finally{setChecking(false);}})();},[user]);
   useEffect(()=>{if(employee){void loadTasks();void loadDashboard();}},[employee]);
-  useEffect(()=>{void fetch('https://api.open-meteo.com/v1/forecast?latitude=25.033&longitude=121.5654&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&timezone=Asia%2FTaipei').then(r=>r.json()).then(data=>setWeather({temperature:Math.round(data.current.temperature_2m),humidity:data.current.relative_humidity_2m,wind:Math.round(data.current.wind_speed_10m),code:data.current.weather_code})).catch(()=>setWeather(null));},[]);
+  useEffect(()=>{
+    let active=true;
+    const loadWeather=async(latitude:number,longitude:number,fallbackName:string)=>{
+      try{
+        const weatherRequest=fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code&timezone=auto`).then(response=>response.json());
+        const locationRequest=fetch(`https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=zh`).then(response=>response.json()).catch(()=>null);
+        const [data,place]=await Promise.all([weatherRequest,locationRequest]);
+        if(!active)return;
+        setWeather({temperature:Math.round(data.current.temperature_2m),humidity:data.current.relative_humidity_2m,wind:Math.round(data.current.wind_speed_10m),code:data.current.weather_code});
+        setWeatherLocation(place?.locality||place?.city||place?.principalSubdivision||fallbackName);
+      }catch{if(active){setWeather(null);setWeatherLocation(fallbackName);}}
+    };
+    const useDefault=()=>void loadWeather(25.033,121.5654,'台北市（預設）');
+    if(!navigator.geolocation){useDefault();return()=>{active=false;};}
+    navigator.geolocation.getCurrentPosition(
+      position=>void loadWeather(position.coords.latitude,position.coords.longitude,'目前位置'),
+      useDefault,
+      {enableHighAccuracy:false,timeout:8000,maximumAge:600000},
+    );
+    return()=>{active=false;};
+  },[]);
   useEffect(()=>{if(!modal)return;const close=(event:KeyboardEvent)=>{if(event.key==='Escape'&&!busy)setModal(false)};window.addEventListener('keydown',close);return()=>window.removeEventListener('keydown',close);},[modal,busy]);
   useEffect(()=>{if(!employee)return;const saved=localStorage.getItem(`junyu-card-order:${employee.email}`);if(!saved){setCardOrder(defaultCardOrder);return;}try{const order=JSON.parse(saved) as CardId[];const valid=order.filter(id=>defaultCardOrder.includes(id));setCardOrder([...valid,...defaultCardOrder.filter(id=>!valid.includes(id))]);}catch{setCardOrder(defaultCardOrder);}},[employee]);
   useEffect(()=>{const apply=()=>{const dark=theme==='dark'||(theme==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=dark?'dark':'light';};apply();localStorage.setItem('junyu-theme',theme);const media=matchMedia('(prefers-color-scheme: dark)');media.addEventListener('change',apply);return()=>media.removeEventListener('change',apply);},[theme]);
@@ -96,7 +117,7 @@ export default function App(){
         if(id==='schedule')return <article {...cardProps(id)}><div className="card-title"><span className="icon-box amber"><CalendarDays/></span><h3>今日行程</h3><small>會議維護中</small>{dragButton}</div><div className="schedule-list"><div className="blue"><b>工作規劃</b><span>09:00</span></div><div className="amber"><b>進度確認</b><span>14:00</span></div><div className="rose"><b>每日整理</b><span>16:30</span></div></div></article>;
         if(id==='tasks')return <article {...cardProps(id)}><div className="card-title"><span className="icon-box green"><Check/></span><h3>我的任務</h3><button onClick={()=>setModal(true)} aria-label="新增工作"><Plus/></button>{dragButton}</div>{visible.length?<div className="compact-tasks">{visible.slice(0,3).map(task=><button key={task.id} className={`compact-task ${task.status}`} disabled={busy} onClick={()=>void advance(task)}><span className="task-check">{task.status==='done'?<Check/>:task.status==='doing'?<Clock3/>:null}</span><b>{task.title}</b><i className={task.priority}/></button>)}<small>{counts.done}/{tasks.length} 已完成</small></div>:<button className="empty-compact" onClick={()=>setModal(true)}><Plus/><b>建立第一項工作</b><span>工作會與您的帳號同步</span></button>}</article>;
         if(id==='quick')return <article {...cardProps(id)}><div className="card-title"><span className="icon-box violet"><Sparkles/></span><h3>快速操作</h3>{dragButton}</div><div className="quick-list"><button onClick={()=>setModal(true)}><span className="blue"><Plus/></span><b>建立工作<small>新增個人待辦事項</small></b></button><button disabled><span className="amber"><CalendarDays/></span><b>會議預約<small>服務目前維護中</small></b></button>{employee.email==='jet@gotofunapp.com'&&<a href="https://takeway-company.ai.studio/"><span className="green"><Settings/></span><b>人員管理<small>開啟公司名冊後台</small></b></a>}</div></article>;
-        if(id==='weather')return <article {...cardProps(id)}><div className="card-title"><span className="icon-box amber"><CloudSun/></span><h3>台北天氣</h3>{dragButton}</div><div className="weather-card"><div className="weather-symbol">{weather&&weather.code>2?'🌥️':'☀️'}</div><strong>{weather?`${weather.temperature}°C`:'--'}</strong><span>{weather?'目前天氣':'載入中'}</span><div><small>💧 {weather?.humidity??'--'}%</small><small>🌬️ {weather?.wind??'--'} km/h</small></div><p>台北市信義區</p></div></article>;
+        if(id==='weather')return <article {...cardProps(id)}><div className="card-title"><span className="icon-box amber"><CloudSun/></span><h3>當地天氣</h3>{dragButton}</div><div className="weather-card"><div className="weather-symbol">{weather&&weather.code>2?'🌥️':'☀️'}</div><strong>{weather?`${weather.temperature}°C`:'--'}</strong><span>{weather?'目前天氣':'載入中'}</span><div><small>💧 {weather?.humidity??'--'}%</small><small>🌬️ {weather?.wind??'--'} km/h</small></div><p>{weatherLocation}</p></div></article>;
         if(id==='profile')return <article {...cardProps(id)}><div className="card-title"><span className="icon-box cyan"><Users/></span><h3>我的資料</h3>{dragButton}</div><div className="profile-hero"><div className="avatar large">{employee.name.slice(0,1)}</div><div><b>{employee.name}</b><span>{employee.unit||'君宇集團'} · {employee.jobTitle||'員工'}</span></div></div><dl><div><dt>工號</dt><dd>{employee.employeeId||'未設定'}</dd></div><div><dt>部門代碼</dt><dd>{employee.departmentCode||'未設定'}</dd></div><div><dt>Google 帳號</dt><dd>{employee.email}</dd></div></dl></article>;
         if(id==='news')return <article {...cardProps(id)}><div className="card-title"><span className="icon-box rose"><Newspaper/></span><h3>公司公告</h3>{dragButton}</div><div className="news-list"><div><span/><b>員工工作入口已啟用</b><small>系統 · 今日</small></div><div><span/><b>會議預約系統維護中</b><small>行政 · 更新中</small></div><div><span/><b>Nexus 個人工作台上線</b><small>資訊 · {message}</small></div></div></article>;
         return <article {...cardProps(id)}><div className="card-title"><span className="icon-box violet"><BarChart3/></span><h3>工作分析</h3>{dragButton}</div><div className="analytics-card"><div><span>工作完成率</span><b>{completion}%</b></div><div className="progress"><i style={{width:`${completion}%`}}/></div><section><div><strong>{counts.done}</strong><span>已完成</span></div><div><strong>{counts.doing}</strong><span>進行中</span></div><div><strong>{counts.todo}</strong><span>待處理</span></div></section></div></article>;
