@@ -7,6 +7,7 @@ import {getAuth} from 'firebase-admin/auth';
 import {getFirestore} from 'firebase-admin/firestore';
 import {resolveEmployee,type Employee} from './employee-identity';
 import {createTask,listTasks,TaskError,updateTask} from './task-service';
+import {checkInMood,listDashboard,sendChat} from './dashboard-service';
 
 dotenv.config();
 const app=express();app.use(express.json({limit:'64kb'}));
@@ -33,6 +34,10 @@ app.use('/api/tasks',async(req,res,next)=>{res.set('Cache-Control','no-store');i
 app.get('/api/tasks',async(_req,res)=>{try{res.json({tasks:await listTasks(db!,res.locals.employee)});}catch{res.status(503).json({error:'讀取工作失敗。'});}});
 app.post('/api/tasks',async(req,res)=>{try{res.status(201).json({task:await createTask(db!,res.locals.employee,req.body)});}catch(error){res.status(error instanceof TaskError?error.status:503).json({error:error instanceof TaskError?error.message:'新增工作失敗。'});}});
 app.patch('/api/tasks/:id',async(req,res)=>{try{res.json({task:await updateTask(db!,res.locals.employee,req.params.id,req.body)});}catch(error){res.status(error instanceof TaskError?error.status:503).json({error:error instanceof TaskError?error.message:'更新工作失敗。'});}});
+app.use('/api/dashboard',async(req,res,next)=>{res.set('Cache-Control','no-store');if(!db)return res.status(503).json({error:'工作資料庫尚未連線。'});const employee=await userFrom(req);if(!employee)return res.status(403).json({error:'請使用已建檔且啟用的 Google 帳號登入。'});res.locals.employee=employee;next();});
+app.get('/api/dashboard',async(_req,res)=>{try{res.json(await listDashboard(db!));}catch{res.status(503).json({error:'讀取團隊工作台失敗。'});}});
+app.post('/api/dashboard/mood',async(req,res)=>{try{await checkInMood(db!,res.locals.employee,req.body?.mood);res.status(201).json(await listDashboard(db!));}catch(error){res.status(400).json({error:error instanceof Error?error.message:'心情報到失敗。'});}});
+app.post('/api/dashboard/chat',async(req,res)=>{try{await sendChat(db!,res.locals.employee,req.body?.text);res.status(201).json(await listDashboard(db!));}catch(error){res.status(400).json({error:error instanceof Error?error.message:'訊息傳送失敗。'});}});
 
 async function start(){if(process.env.NODE_ENV!=='production'){const vite=await createViteServer({server:{middlewareMode:true},appType:'spa'});app.use(vite.middlewares);}else{const dist=path.join(process.cwd(),'dist');app.use(express.static(dist));app.get('*',(_req,res)=>res.sendFile(path.join(dist,'index.html')));}app.listen(Number(process.env.PORT)||3000,'0.0.0.0');}
 start();

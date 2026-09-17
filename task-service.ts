@@ -1,5 +1,6 @@
 import type {Firestore} from 'firebase-admin/firestore';
 import type {Employee} from './employee-identity';
+import {addActivity} from './dashboard-service';
 
 export type TaskStatus='todo'|'doing'|'done';
 export type TaskPriority='low'|'normal'|'high';
@@ -23,7 +24,7 @@ export async function createTask(db:Firestore,actor:Employee,input:any){
   const ref=db.collection('employee_work_tasks').doc();
   const now=new Date().toISOString();
   const task:Task={id:ref.id,title:clean(input.title,120,true),notes:clean(input.notes??'',1000),dueDate:input.dueDate,priority:input.priority,status:'todo',ownerEmail:actor.email,ownerName:actor.name,createdAt:now,updatedAt:now,version:1};
-  await ref.create(task);return task;
+  await ref.create(task);await addActivity(db,actor,'task',`建立工作「${task.title}」`);return task;
 }
 
 export async function updateTask(db:Firestore,actor:Employee,id:string,input:any){
